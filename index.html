@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>簡易訂貨系統</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-tc@5.0.16/400,500,600,700.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { primary: '#2563EB', 'primary-hover': '#1D4ED8' },
+                    fontFamily: { sans: ['"Noto Sans TC"', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { 
+            font-family: 'Noto Sans TC', sans-serif;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+        .product-scroll::-webkit-scrollbar { width: 6px; }
+        .product-scroll::-webkit-scrollbar-track { background: transparent; }
+        .product-scroll::-webkit-scrollbar-thumb { background-color: #CBD5E1; border-radius: 20px; }
+        .cat-btn.active { background-color: #2563EB; color: white; font-weight: 600; }
+        .cat-btn:not(.active) { background-color: #F1F5F9; color: #475569; }
+        .cat-btn:not(.active):hover { background-color: #E2E8F0; }
+        .modal-backdrop { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+        .order-history-item { transition: all 0.2s ease; }
+        .order-history-item:hover { background-color: #F8FAFC; }
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 3px solid #ffffff;
+            width: 20px; height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input, select, textarea { touch-action: auto; -webkit-user-select: text; }
+    </style>
+</head>
+<body class="bg-white text-slate-800 min-h-screen">
+
+    <header class="px-6 py-6 border-b border-slate-200 max-w-7xl mx-auto">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">簡易訂貨系統</h1>
+                <p class="text-slate-500 text-sm mt-1 flex items-center gap-2">
+                    <span id="data-status" class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                    <span id="data-source-text">系統就緒</span>
+                </p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="btn-settings" class="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    設定數據源
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-10">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div class="lg:col-span-2 space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <h2 class="text-lg font-bold text-slate-900">商品列表 <span id="product-count" class="text-sm font-normal text-slate-400 ml-2"></span></h2>
+                    <div class="flex gap-2">
+                        <button id="btn-batch-import" class="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 shadow-sm transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            批量導入
+                        </button>
+                        <button id="btn-manage-products" class="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 shadow-sm transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                            管理商品
+                        </button>
+                    </div>
+                </div>
+                <div class="relative">
+                    <input type="text" id="search-input" placeholder="搜尋貨號或商品名稱..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition shadow-sm">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <div id="category-container" class="flex gap-2 overflow-x-auto pb-2"></div>
+                <div id="product-list" class="space-y-3 max-h-[600px] overflow-y-auto product-scroll pr-1">
+                    <div class="flex justify-center py-10"><div class="spinner border-slate-200 border-t-blue-600"></div></div>
+                </div>
+            </div>
+            <div class="lg:col-span-1 lg:sticky lg:top-6">
+                <div class="bg-white">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-slate-900">訂單明細</h2>
+                        <span id="order-summary" class="text-sm text-slate-500">0 項商品 · 共 0 件</span>
+                    </div>
+                    <div id="order-list" class="border border-slate-200 rounded-xl bg-slate-50 min-h-[150px] flex items-center justify-center mb-6">
+                        <p class="text-slate-400 text-sm">尚未選擇任何商品</p>
+                    </div>
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-medium text-slate-700">匯出訂單</h3>
+                        <div class="flex gap-3">
+                            <button id="btn-export-excel" class="flex-1 flex items-center justify-center gap-2 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+                                <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                Excel
+                            </button>
+                            <button id="btn-save-order" class="flex-1 flex items-center justify-center gap-2 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                                保存
+                            </button>
+                        </div>
+                        <div class="pt-4 border-t border-slate-200">
+                            <h3 class="text-sm font-medium text-slate-700 mb-3">歷史記錄</h3>
+                            <button id="btn-order-history" class="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 transition w-full text-left">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                訂單歷史
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <input type="file" id="import-file" class="hidden" accept=".json,.csv">
+
+    <div id="modal-settings" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 fade-in relative">
+            <button id="close-settings" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-lg font-bold mb-4">設定數據源</h3>
+            <div class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
+                    <p class="font-semibold mb-1">如何設定 Google Sheet？</p>
+                    <ol class="list-decimal list-inside space-y-1">
+                        <li>打開您的 Google Sheet 檔案。</li>
+                        <li>點擊「檔案」>「分享」>「發佈到網頁」。</li>
+                        <li>選擇「CSV (.csv)」格式，點擊「發佈」。</li>
+                        <li>複製連結並貼在下方的網址欄。</li>
+                    </ol>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Google Sheet CSV 網址</label>
+                    <input type="text" id="sheet-url" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://docs.google.com/...">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button id="btn-cancel-settings" class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-white transition">取消</button>
+                    <button id="btn-load-sheet" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2">
+                        <span>載入數據</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-import" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 fade-in relative">
+            <button id="close-import" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-lg font-bold mb-4">批量導入商品清單</h3>
+            <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition cursor-pointer" id="drop-zone">
+                <svg class="w-10 h-10 text-slate-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <p class="text-sm text-slate-600 font-medium">點擊上傳 JSON 或 CSV 檔案</p>
+                <p class="text-xs text-slate-400 mt-1">支援格式: products_data.json, Google Sheet CSV</p>
+            </div>
+            <div id="import-status" class="mt-4 text-sm hidden"></div>
+        </div>
+    </div>
+
+    <div id="modal-manage" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl h-[85vh] flex flex-col fade-in relative">
+            <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold" id="modal-title">管理商品</h3>
+                <button id="close-manage" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 border-b border-slate-100 flex gap-3" id="manage-toolbar">
+                <input type="text" id="manage-search" placeholder="搜尋商品..." class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
+                <button id="btn-add-product" class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    新增商品
+                </button>
+                <button id="btn-manage-categories" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                    管理類別
+                </button>
+            </div>
+            <div id="product-management-view" class="flex-1 overflow-y-auto p-0">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-4 py-3 font-medium text-slate-600">貨號</th>
+                            <th class="px-4 py-3 font-medium text-slate-600">商品名稱</th>
+                            <th class="px-4 py-3 font-medium text-slate-600">類別</th>
+                            <th class="px-4 py-3 font-medium text-slate-600 w-10"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="manage-table-body" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+            <div id="category-management-view" class="flex-1 overflow-y-auto p-0 hidden">
+                <div class="p-4">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 sticky top-0 z-10">
+                            <tr>
+                                <th class="px-4 py-3 font-medium text-slate-600">類別 ID</th>
+                                <th class="px-4 py-3 font-medium text-slate-600">類別名稱</th>
+                                <th class="px-4 py-3 font-medium text-slate-600 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="category-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                    <button id="btn-add-category" class="mt-4 flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition w-full justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        新增類別
+                    </button>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50 rounded-b-2xl">
+                <button id="btn-cancel-manage" class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-white transition">取消</button>
+                <button id="btn-save-manage" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm">保存更改</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-add-product" class="fixed inset-0 z-[60] hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 fade-in relative">
+            <button id="close-add-product" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-lg font-bold mb-4">新增商品</h3>
+            <form id="add-product-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">貨號</label>
+                    <input type="text" id="new-code" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">商品名稱</label>
+                    <input type="text" id="new-name" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">類別</label>
+                    <select id="new-category" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" id="cancel-add-product" class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-white transition">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">確認新增</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-history" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl h-[80vh] flex flex-col fade-in relative">
+            <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold">訂單歷史</h3>
+                <button id="close-history" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4" id="history-list">
+                <div class="text-center py-8 text-slate-400">
+                    <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <p>目前尚無訂單記錄</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-lg text-sm font-medium opacity-0 transition-opacity duration-300 pointer-events-none z-[70]">操作成功</div>
+
+    <script>
+        let categories = [
+            { id: "cat-1", name: "便當", color: "bg-blue-100 text-blue-800" },
+            { id: "cat-2", name: "OC飲料", color: "bg-green-100 text-green-800" },
+            { id: "cat-3", name: "麵包", color: "bg-orange-100 text-orange-800" }
+        ];
+        let products = [];
+        const fallbackProducts = [
+            { id: "1", code: "313629", name: "A新及第豬肉熟", categoryId: "cat-1" },
+            { id: "2", code: "313635", name: "A新及第小籠湯", categoryId: "cat-1" },
+            { id: "3", code: "314820", name: "七里香-黃金", categoryId: "cat-1" },
+            { id: "110", code: "347675", name: "酷椰與100%椰", categoryId: "cat-2" },
+            { id: "144", code: "219349", name: "林鳳營鮮乳全脂228", categoryId: "cat-2" },
+            { id: "195", code: "346762", name: "純喫茶綠茶481ml", categoryId: "cat-2" },
+            { id: "266", code: "130002", name: "糖蜜香紅豆麵包", categoryId: "cat-3" },
+            { id: "288", code: "133971", name: "瑞穗鮮乳土司", categoryId: "cat-3" },
+            { id: "320", code: "367550", name: "OK熊鬆餅-經典", categoryId: "cat-3" }
+        ];
+        let cart = {};
+        let currentCategory = 'all';
+        let searchQuery = '';
+        let manageSearchQuery = '';
+        let tempProducts = [];
+        let tempCategories = [];
+        let orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+        const DEFAULT_SHEET_ID = '1PraWGjExwmu4jfNT3Z4fXuwJBx-kU3e-gJsUUBj4uG8';
+        let sheetUrl = localStorage.getItem('googleSheetUrl') || `https://docs.google.com/spreadsheets/d/${DEFAULT_SHEET_ID}/export?format=csv`;
+
+        const els = {
+            productList: document.getElementById('product-list'),
+            orderList: document.getElementById('order-list'),
+            orderSummary: document.getElementById('order-summary'),
+            searchInput: document.getElementById('search-input'),
+            categoryContainer: document.getElementById('category-container'),
+            toast: document.getElementById('toast'),
+            btnBatchImport: document.getElementById('btn-batch-import'),
+            btnManageProducts: document.getElementById('btn-manage-products'),
+            btnExportExcel: document.getElementById('btn-export-excel'),
+            btnSaveOrder: document.getElementById('btn-save-order'),
+            btnOrderHistory: document.getElementById('btn-order-history'),
+            btnSettings: document.getElementById('btn-settings'),
+            importFile: document.getElementById('import-file'),
+            dropZone: document.getElementById('drop-zone'),
+            modalImport: document.getElementById('modal-import'),
+            closeImport: document.getElementById('close-import'),
+            importStatus: document.getElementById('import-status'),
+            modalSettings: document.getElementById('modal-settings'),
+            closeSettings: document.getElementById('close-settings'),
+            btnCancelSettings: document.getElementById('btn-cancel-settings'),
+            btnLoadSheet: document.getElementById('btn-load-sheet'),
+            sheetUrlInput: document.getElementById('sheet-url'),
+            modalManage: document.getElementById('modal-manage'),
+            closeManage: document.getElementById('close-manage'),
+            btnCancelManage: document.getElementById('btn-cancel-manage'),
+            btnSaveManage: document.getElementById('btn-save-manage'),
+            manageTableBody: document.getElementById('manage-table-body'),
+            manageSearch: document.getElementById('manage-search'),
+            btnAddProduct: document.getElementById('btn-add-product'),
+            modalAddProduct: document.getElementById('modal-add-product'),
+            closeAddProduct: document.getElementById('close-add-product'),
+            cancelAddProduct: document.getElementById('cancel-add-product'),
+            addProductForm: document.getElementById('add-product-form'),
+            newCode: document.getElementById('new-code'),
+            newName: document.getElementById('new-name'),
+            newCategory: document.getElementById('new-category'),
+            modalHistory: document.getElementById('modal-history'),
+            closeHistory: document.getElementById('close-history'),
+            historyList: document.getElementById('history-list'),
+            btnManageCategories: document.getElementById('btn-manage-categories'),
+            productManagementView: document.getElementById('product-management-view'),
+            categoryManagementView: document.getElementById('category-management-view'),
+            modalTitle: document.getElementById('modal-title'),
+            manageToolbar: document.getElementById('manage-toolbar'),
+            categoryTableBody: document.getElementById('category-table-body'),
+            btnAddCategory: document.getElementById('btn-add-category'),
+            productCount: document.getElementById('product-count'),
+            dataStatus: document.getElementById('data-status'),
+            dataSourceText: document.getElementById('data-source-text')
+        };
+
+        function showToast(msg) {
+            els.toast.textContent = msg;
+            els.toast.classList.remove('opacity-0');
+            setTimeout(() => els.toast.classList.add('opacity-0'), 2500);
+        }
+
+        function renderCategories() {
+            let html = `<button class="cat-btn active px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition" data-cat="all">全部</button>`;
+            categories.forEach(cat => {
+                html += `<button class="cat-btn px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition" data-cat="${cat.id}">${cat.name}</button>`;
+            });
+            els.categoryContainer.innerHTML = html;
+            els.categoryContainer.querySelectorAll('.cat-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    els.categoryContainer.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentCategory = btn.dataset.cat;
+                    renderProducts();
+                });
+            });
+        }
+
+        function renderProducts() {
+            const filtered = products.filter(p => {
+                const matchCat = currentCategory === 'all' || p.categoryId === currentCategory;
+                const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.code.includes(searchQuery);
+                return matchCat && matchSearch;
+            });
+            els.productList.innerHTML = '';
+            els.productCount.textContent = `(${filtered.length})`;
+            if (filtered.length === 0) {
+                els.productList.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">找不到符合的商品</div>`;
+                return;
+            }
+            filtered.forEach(p => {
+                const qty = cart[p.id] || 0;
+                const div = document.createElement('div');
+                div.className = `group flex items-center justify-between p-4 bg-white border ${qty > 0 ? 'border-blue-200 bg-blue-50/30' : 'border-slate-200'} rounded-xl hover:border-slate-300 transition-all`;
+                div.innerHTML = `
+                    <div class="flex-1 min-w-0 mr-4">
+                        <div class="text-xs text-slate-400 font-medium mb-0.5">${p.code}</div>
+                        <div class="font-semibold text-slate-800 truncate">${p.name}</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="qty-btn minus w-8 h-8 rounded-lg border ${qty > 0 ? 'border-blue-200 bg-white text-blue-600 hover:bg-blue-50' : 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed'} flex items-center justify-center transition" 
+                            onclick="updateCart('${p.id}', -1)" ${qty === 0 ? 'disabled' : ''}>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+                        </button>
+                        <span class="w-6 text-center text-sm font-medium ${qty > 0 ? 'text-blue-700' : 'text-slate-400'}">${qty}</span>
+                        <button class="qty-btn plus w-8 h-8 rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center transition shadow-sm shadow-blue-200"
+                            onclick="updateCart('${p.id}', 1)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </button>
+                    </div>
+                `;
+                els.productList.appendChild(div);
+            });
+        }
+
+        function renderOrderDetails() {
+            const activeItems = products.filter(p => (cart[p.id] || 0) > 0);
+            let totalItems = 0;
+            let html = '';
+            if (activeItems.length === 0) {
+                els.orderList.innerHTML = `<div class="flex items-center justify-center h-full min-h-[120px]"><p class="text-slate-400 text-sm">尚未選擇任何商品</p></div>`;
+                els.orderSummary.textContent = '0 項商品 · 共 0 件';
+                return;
+            }
+            activeItems.forEach(p => {
+                const qty = cart[p.id];
+                totalItems += qty;
+                html += `
+                    <div class="flex justify-between items-center py-3 border-b border-slate-100 last:border-0">
+                        <div>
+                            <div class="font-medium text-slate-800 text-sm">${p.name}</div>
+                            <div class="text-xs text-slate-400">${p.code} × ${qty}</div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                             <div class="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm">
+                                <button onclick="updateCart('${p.id}', -1)" class="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-50 rounded-l-lg transition">−</button>
+                                <span class="w-6 text-center text-sm select-none">${qty}</span>
+                                <button onclick="updateCart('${p.id}', 1)" class="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-50 rounded-r-lg transition">+</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            els.orderList.innerHTML = `<div class="p-4 w-full">${html}</div>`;
+            els.orderSummary.textContent = `${activeItems.length} 項商品 · 共 ${totalItems} 件`;
+        }
+
+        function updateCart(id, delta) {
+            if (!cart[id]) cart[id] = 0;
+            cart[id] += delta;
+            if (cart[id] < 0) cart[id] = 0;
+            if (cart[id] === 0) delete cart[id];
+            renderProducts();
+            renderOrderDetails();
+        }
+
+        function findColumnKey(keys, targetKeywords) {
+            const normalizedTargets = targetKeywords.map(t => t.toLowerCase());
+            return keys.find(k => {
+                const nk = k.toLowerCase().trim();
+                return normalizedTargets.some(t => nk.includes(t));
+            });
+        }
+
+        async function loadFromGoogleSheet(url) {
+            if (!url) return false;
+            try {
+                els.dataStatus.className = 'inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
+                els.dataSourceText.textContent = '正在載入數據...';
+                showToast('正在從 Google Sheet 載入數據...');
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('無法下載檔案');
+                const csvText = await response.text();
+                return new Promise((resolve, reject) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            try {
+                                const data = results.data;
+                                if (!data || data.length === 0) throw new Error('數據為空');
+                                const metaFields = results.meta.fields.map(f => f.trim());
+                                const codeKey = findColumnKey(metaFields, ['code', '貨號', '編號']);
+                                const nameKey = findColumnKey(metaFields, ['name', '商品名稱', '品名']);
+                                const idKey = findColumnKey(metaFields, ['id', 'ID']);
+                                const catIdKey = findColumnKey(metaFields, ['categoryId', '類別ID', '類別代碼']);
+                                const catNameKey = findColumnKey(metaFields, ['categoryName', '類別名稱', '分類']);
+                                const quantityKey = findColumnKey(metaFields, ['quantity', '數量', '訂購數']);
+                                const newProducts = [];
+                                const foundCategories = {};
+                                const colors = ['bg-blue-100 text-blue-800', 'bg-green-100 text-green-800', 'bg-orange-100 text-orange-800', 'bg-purple-100 text-purple-800', 'bg-pink-100 text-pink-800', 'bg-yellow-100 text-yellow-800'];
+                                let colorIdx = 0;
+                                data.forEach((row, idx) => {
+                                    const trimmedRow = {};
+                                    for (const key in row) trimmedRow[key.trim()] = (row[key] || '').trim();
+                                    const code = codeKey ? trimmedRow[codeKey] : '';
+                                    const name = nameKey ? trimmedRow[nameKey] : '未命名商品';
+                                    const id = idKey ? trimmedRow[idKey] : String(Date.now() + idx);
+                                    const catId = catIdKey ? trimmedRow[catIdKey] : '';
+                                    const catName = catNameKey ? trimmedRow[catNameKey] : '';
+                                    const qty = quantityKey ? parseInt(trimmedRow[quantityKey]) || 0 : 0;
+                                    if (code || name !== '未命名商品') {
+                                        let finalCatId = catId;
+                                        if (!finalCatId && catName) finalCatId = `cat-${catName}`;
+                                        else if (!finalCatId) finalCatId = 'cat-1';
+                                        newProducts.push({ id: id.trim(), code: code, name: name, categoryId: finalCatId.trim() });
+                                        if (qty > 0) cart[id.trim()] = qty;
+                                        if (catId && catName && !foundCategories[catId.trim()]) {
+                                            foundCategories[catId.trim()] = { id: catId.trim(), name: catName, color: colors[colorIdx % colors.length] };
+                                            colorIdx++;
+                                        }
+                                        if (!catId && catName && !foundCategories[`cat-${catName}`]) {
+                                             foundCategories[`cat-${catName}`] = { id: `cat-${catName}`, name: catName, color: colors[colorIdx % colors.length] };
+                                             colorIdx++;
+                                        }
+                                    }
+                                });
+                                products = newProducts;
+                                if (Object.keys(foundCategories).length > 0) categories = Object.values(foundCategories);
+                                if (categories.length === 0 && newProducts.length > 0) {
+                                    const uniqueCatIds = [...new Set(newProducts.map(p => p.categoryId))];
+                                    categories = uniqueCatIds.map((id, i) => ({ id, name: id, color: colors[i % colors.length] }));
+                                }
+                                localStorage.setItem('googleSheetUrl', url);
+                                els.sheetUrlInput.value = url;
+                                els.dataStatus.className = 'inline-block w-2 h-2 rounded-full bg-green-500';
+                                els.dataSourceText.textContent = `已載入 ${products.length} 項商品`;
+                                renderCategories();
+                                renderProducts();
+                                resolve(true);
+                            } catch (e) { reject(e); }
+                        },
+                        error: (err) => reject(err)
+                    });
+                });
+            } catch (error) {
+                console.error(error);
+                showToast('載入失敗，請檢查網址或權限');
+                els.dataStatus.className = 'inline-block w-2 h-2 rounded-full bg-red-500';
+                els.dataSourceText.textContent = '載入失敗';
+                return false;
+            }
+        }
+
+        function openImportModal() { els.modalImport.classList.remove('hidden'); els.modalImport.classList.add('flex'); els.importStatus.classList.add('hidden'); }
+        function closeImportModal() { els.modalImport.classList.add('hidden'); els.modalImport.classList.remove('flex'); }
+        function handleImportFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target.result;
+                const ext = file.name.split('.').pop().toLowerCase();
+                try {
+                    if (ext === 'json') {
+                        const data = JSON.parse(content);
+                        if (data.categories) categories = data.categories.map(c => ({ id: (c.id || '').trim(), name: (c.name || '').trim(), color: (c.color || 'bg-gray-100 text-gray-800').trim() }));
+                        if (data.products) products = data.products.map(p => ({ id: (p.id || '').trim(), code: (p.code || '').trim(), name: (p.name || '').trim(), categoryId: (p.categoryId || '').trim() }));
+                        cart = {};
+                        renderCategories(); renderProducts(); renderOrderDetails();
+                        showToast(`成功導入 ${products.length} 項商品`);
+                        closeImportModal();
+                    } else if (ext === 'csv') {
+                        Papa.parse(content, {
+                            header: true,
+                            complete: (results) => {
+                                const data = results.data;
+                                const metaFields = results.meta.fields.map(f => f.trim());
+                                const codeKey = findColumnKey(metaFields, ['code', '貨號', '編號']);
+                                const nameKey = findColumnKey(metaFields, ['name', '商品名稱', '品名']);
+                                const idKey = findColumnKey(metaFields, ['id', 'ID']);
+                                const catIdKey = findColumnKey(metaFields, ['categoryId', '類別ID', '類別代碼']);
+                                const catNameKey = findColumnKey(metaFields, ['categoryName', '類別名稱', '分類']);
+                                const quantityKey = findColumnKey(metaFields, ['quantity', '數量', '訂購數']);
+                                const newProducts = [];
+                                const foundCategories = {};
+                                const colors = ['bg-blue-100 text-blue-800', 'bg-green-100 text-green-800', 'bg-orange-100 text-orange-800'];
+                                let colorIdx = 0;
+                                data.forEach((row, idx) => {
+                                    const trimmedRow = {};
+                                    for (const key in row) trimmedRow[key.trim()] = (row[key] || '').trim();
+                                    const code = codeKey ? trimmedRow[codeKey] : '';
+                                    const name = nameKey ? trimmedRow[nameKey] : '未命名';
+                                    const id = idKey ? trimmedRow[idKey] : String(Date.now() + idx);
+                                    const catId = catIdKey ? trimmedRow[catIdKey] : '';
+                                    const catName = catNameKey ? trimmedRow[catNameKey] : '';
+                                    const qty = quantityKey ? parseInt(trimmedRow[quantityKey]) || 0 : 0;
+                                    if (code || name !== '未命名') {
+                                        let finalCatId = catId || `cat-${catName || 'unknown'}`;
+                                        newProducts.push({ id: id.trim(), code: code, name: name, categoryId: finalCatId.trim() });
+                                        if (qty > 0) cart[id.trim()] = qty;
+                                        if (catId && catName && !foundCategories[catId.trim()]) {
+                                            foundCategories[catId.trim()] = { id: catId.trim(), name: catName, color: colors[colorIdx % colors.length] };
+                                            colorIdx++;
+                                        }
+                                    }
+                                });
+                                products = newProducts;
+                                if (Object.keys(foundCategories).length > 0) categories = Object.values(foundCategories);
+                                renderCategories(); renderProducts(); renderOrderDetails();
+                                showToast(`成功導入 CSV ${products.length} 項商品`);
+                                closeImportModal();
+                            }
+                        });
+                    } else { throw new Error('不支援的檔案格式'); }
+                } catch (err) {
+                    els.importStatus.textContent = '匯入失敗：檔案格式錯誤';
+                    els.importStatus.classList.remove('hidden');
+                    els.importStatus.className = 'mt-4 text-sm text-red-500';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        let manageView = 'products'; 
+        function openManageModal() {
+            tempProducts = JSON.parse(JSON.stringify(products));
+            tempCategories = JSON.parse(JSON.stringify(categories));
+            manageView = 'products';
+            switchManageView('products');
+            els.modalManage.classList.remove('hidden');
+            els.modalManage.classList.add('flex');
+        }
+        function closeManageModal() { els.modalManage.classList.add('hidden'); els.modalManage.classList.remove('flex'); }
+        function switchManageView(view) {
+            manageView = view;
+            if (view === 'products') {
+                els.productManagementView.classList.remove('hidden');
+                els.categoryManagementView.classList.add('hidden');
+                els.modalTitle.textContent = '管理商品';
+                els.manageToolbar.classList.remove('hidden');
+                els.btnManageCategories.classList.remove('bg-blue-50', 'text-blue-600', 'border-blue-200');
+                els.btnManageCategories.classList.add('bg-white', 'text-slate-600', 'border-slate-200');
+                renderManageTable();
+            } else {
+                els.productManagementView.classList.add('hidden');
+                els.categoryManagementView.classList.remove('hidden');
+                els.modalTitle.textContent = '管理類別';
+                els.manageToolbar.classList.add('hidden');
+                renderManageCategories();
+            }
+        }
+        function renderManageTable() {
+            const filtered = tempProducts.filter(p => p.name.toLowerCase().includes(manageSearchQuery.toLowerCase()) || p.code.includes(manageSearchQuery));
+            els.manageTableBody.innerHTML = '';
+            if (filtered.length === 0) {
+                els.manageTableBody.innerHTML = `<tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">無相符商品</td></tr>`;
+                return;
+            }
+            filtered.forEach(p => {
+                const catOptions = tempCategories.map(c => `<option value="${c.id}" ${p.categoryId === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50';
+                tr.innerHTML = `
+                    <td class="px-4 py-3"><input type="text" value="${p.code}" class="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none text-sm py-1" data-field="code" data-idx="${p.id}"></td>
+                    <td class="px-4 py-3"><input type="text" value="${p.name}" class="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none text-sm py-1" data-field="name" data-idx="${p.id}"></td>
+                    <td class="px-4 py-3"><select class="bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none text-sm py-1 w-full" data-field="categoryId" data-idx="${p.id}">${catOptions}</select></td>
+                    <td class="px-4 py-3 text-right"><button class="text-red-400 hover:text-red-600 transition p-1" onclick="deleteProduct('${p.id}')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>
+                `;
+                els.manageTableBody.appendChild(tr);
+            });
+            els.manageTableBody.querySelectorAll('input, select').forEach(el => {
+                el.addEventListener('change', (e) => {
+                    const idx = e.target.dataset.idx;
+                    const field = e.target.dataset.field;
+                    const prod = tempProducts.find(p => p.id === idx);
+                    if (prod) prod[field] = e.target.value;
+                });
+            });
+        }
+        window.deleteProduct = function(id) {
+            if (confirm('確定要刪除此商品嗎？')) {
+                tempProducts = tempProducts.filter(p => p.id !== id);
+                renderManageTable();
+            }
+        };
+        function renderManageCategories() {
+            els.categoryTableBody.innerHTML = '';
+            tempCategories.forEach((c, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50';
+                tr.innerHTML = `
+                    <td class="px-4 py-3"><input type="text" value="${c.id}" class="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none text-sm py-1 font-mono" data-field="id" data-idx="${idx}"></td>
+                    <td class="px-4 py-3"><input type="text" value="${c.name}" class="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none text-sm py-1" data-field="name" data-idx="${idx}"></td>
+                    <td class="px-4 py-3 text-right"><button class="text-red-400 hover:text-red-600 transition p-1" onclick="deleteCategory(${idx})"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>
+                `;
+                els.categoryTableBody.appendChild(tr);
+            });
+            els.categoryTableBody.querySelectorAll('input').forEach(el => {
+                el.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    const field = e.target.dataset.field;
+                    if (tempCategories[idx]) tempCategories[idx][field] = e.target.value;
+                });
+            });
+        }
+        window.deleteCategory = function(idx) {
+            if (tempCategories.length <= 1) { showToast('至少需要保留一個類別'); return; }
+            if (confirm('確定要刪除此類別嗎？')) {
+                const deletedId = tempCategories[idx].id;
+                tempCategories.splice(idx, 1);
+                if (tempCategories.length > 0) {
+                    const fallbackCat = tempCategories[0].id;
+                    tempProducts.forEach(p => { if (p.categoryId === deletedId) p.categoryId = fallbackCat; });
+                }
+                renderManageCategories();
+            }
+        };
+        els.btnAddCategory.addEventListener('click', () => {
+            const newId = `cat-${Date.now().toString(36)}`;
+            tempCategories.push({ id: newId, name: "新類別", color: "bg-gray-100 text-gray-800" });
+            renderManageCategories();
+        });
+        function openAddProductModal() {
+            els.newCategory.innerHTML = tempCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            els.addProductForm.reset();
+            els.modalAddProduct.classList.remove('hidden');
+            els.modalAddProduct.classList.add('flex');
+        }
+        function closeAddProductModal() { els.modalAddProduct.classList.add('hidden'); els.modalAddProduct.classList.remove('flex'); }
+        els.addProductForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newProduct = { id: String(Date.now()), code: els.newCode.value.trim(), name: els.newName.value.trim(), categoryId: els.newCategory.value };
+            tempProducts.push(newProduct);
+            closeAddProductModal();
+            renderManageTable();
+            showToast('商品已新增');
+        });
+        function openHistoryModal() { renderHistoryList(); els.modalHistory.classList.remove('hidden'); els.modalHistory.classList.add('flex'); }
+        function closeHistoryModal() { els.modalHistory.classList.add('hidden'); els.modalHistory.classList.remove('flex'); }
+        function renderHistoryList() {
+            if (orderHistory.length === 0) {
+                els.historyList.innerHTML = `<div class="text-center py-8 text-slate-400"><svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><p>目前尚無訂單記錄</p></div>`;
+                return;
+            }
+            els.historyList.innerHTML = orderHistory.map((order, index) => {
+                const date = new Date(order.date);
+                const dateStr = `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                const items = order.items.map(item => `<div class="flex justify-between text-xs"><span>${item.name} × ${item.qty}</span><span class="text-slate-500">${item.code}</span></div>`).join('');
+                return `<div class="order-history-item border border-slate-200 rounded-xl p-4 mb-3 bg-white"><div class="flex justify-between items-start mb-2"><div><div class="font-medium text-sm text-slate-800">${order.id}</div><div class="text-xs text-slate-400">${dateStr}</div></div><button onclick="deleteOrder(${index})" class="text-slate-400 hover:text-red-500 transition p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></div><div class="space-y-1 pl-3 border-l-2 border-slate-100">${items}</div><div class="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500 text-right">${order.items.length} 項商品 · 共 ${order.totalQty} 件</div></div>`;
+            }).join('');
+        }
+        window.deleteOrder = function(index) {
+            if (confirm('確定要刪除此筆訂單嗎？')) {
+                orderHistory.splice(index, 1);
+                localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+                renderHistoryList();
+                showToast('訂單已刪除');
+            }
+        };
+        function saveOrder() {
+            const activeItems = products.filter(p => (cart[p.id] || 0) > 0);
+            if (activeItems.length === 0) return showToast('購物車是空的');
+            const order = {
+                id: 'ORD-' + Date.now().toString(36).toUpperCase(),
+                date: new Date().toISOString(),
+                items: activeItems.map(p => ({ id: p.id, code: p.code, name: p.name, qty: cart[p.id] })),
+                totalQty: activeItems.reduce((sum, p) => sum + cart[p.id], 0)
+            };
+            orderHistory.unshift(order);
+            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            showToast(`訂單 ${order.id} 已保存`);
+        }
+
+        function exportToExcel() {
+            const activeItems = products.filter(p => (cart[p.id] || 0) > 0);
+            if (activeItems.length === 0) return showToast('購物車是空的');
+
+            // Split into chunks of 40
+            const chunks = [];
+            for (let i = 0; i < activeItems.length; i += 40) {
+                chunks.push(activeItems.slice(i, i + 40));
+            }
+
+            // Create workbook and empty worksheet
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([]);
+
+            // Add each chunk to the sheet, shifting columns
+            // Each chunk has 3 columns: 貨號, 商品名稱, 數量
+            // Plus 1 column gap between chunks
+            chunks.forEach((chunk, index) => {
+                const data = chunk.map(p => ({ 
+                    '貨號': p.code, 
+                    '商品名稱': p.name, 
+                    '數量': cart[p.id] 
+                }));
+                // Origin: Row 0, Column = index * 4 (3 cols data + 1 col gap)
+                XLSX.utils.sheet_add_json(ws, data, { origin: { r: 0, c: index * 4 } });
+            });
+
+            // Set column widths
+            const wsCols = [];
+            for (let i = 0; i < chunks.length; i++) {
+                wsCols.push({ wch: 12 }); // 貨號 column
+                wsCols.push({ wch: 22 }); // 商品名稱 column
+                wsCols.push({ wch: 8 });  // 數量 column
+                wsCols.push({ wch: 2 });  // Gap
+            }
+            if (wsCols.length > 0) wsCols.pop(); // Remove last gap
+            ws['!cols'] = wsCols;
+
+            XLSX.utils.book_append_sheet(wb, ws, '訂單明細');
+            XLSX.writeFile(wb, `訂單_${new Date().toISOString().slice(0,10)}.xlsx`);
+            showToast('Excel 匯出成功');
+        }
+
+        els.btnSettings.addEventListener('click', () => { els.sheetUrlInput.value = localStorage.getItem('googleSheetUrl') || ''; els.modalSettings.classList.remove('hidden'); els.modalSettings.classList.add('flex'); });
+        els.closeSettings.addEventListener('click', () => { els.modalSettings.classList.add('hidden'); els.modalSettings.classList.remove('flex'); });
+        els.btnCancelSettings.addEventListener('click', () => { els.modalSettings.classList.add('hidden'); els.modalSettings.classList.remove('flex'); });
+        els.btnLoadSheet.addEventListener('click', async () => {
+            let url = els.sheetUrlInput.value.trim();
+            if (!url) return showToast('請輸入網址');
+            if (url.includes('docs.google.com/spreadsheets/d/')) {
+                const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                if (match) url = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
+            }
+            const btn = els.btnLoadSheet;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<div class="spinner border-white/30 border-t-white w-4 h-4 mr-2"></div>載入中...';
+            btn.disabled = true;
+            const success = await loadFromGoogleSheet(url);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            if (success) { els.modalSettings.classList.add('hidden'); els.modalSettings.classList.remove('flex'); }
+        });
+        els.btnBatchImport.addEventListener('click', openImportModal);
+        els.closeImport.addEventListener('click', closeImportModal);
+        els.dropZone.addEventListener('click', () => els.importFile.click());
+        els.importFile.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImportFile(e.target.files[0]); });
+        els.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); els.dropZone.classList.add('bg-blue-50', 'border-blue-300'); });
+        els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('bg-blue-50', 'border-blue-300'));
+        els.dropZone.addEventListener('drop', (e) => { e.preventDefault(); els.dropZone.classList.remove('bg-blue-50', 'border-blue-300'); if (e.dataTransfer.files.length > 0) handleImportFile(e.dataTransfer.files[0]); });
+        els.btnManageProducts.addEventListener('click', openManageModal);
+        els.closeManage.addEventListener('click', closeManageModal);
+        els.btnCancelManage.addEventListener('click', closeManageModal);
+        els.manageSearch.addEventListener('input', (e) => { manageSearchQuery = e.target.value; if (manageView === 'products') renderManageTable(); });
+        els.btnSaveManage.addEventListener('click', () => {
+            products = tempProducts;
+            categories = tempCategories;
+            renderCategories(); renderProducts(); renderOrderDetails();
+            closeManageModal();
+            showToast('資料已更新');
+        });
+        els.btnAddProduct.addEventListener('click', openAddProductModal);
+        els.closeAddProduct.addEventListener('click', closeAddProductModal);
+        els.cancelAddProduct.addEventListener('click', closeAddProductModal);
+        els.btnManageCategories.addEventListener('click', () => switchManageView('categories'));
+        els.btnOrderHistory.addEventListener('click', openHistoryModal);
+        els.closeHistory.addEventListener('click', closeHistoryModal);
+        els.btnSaveOrder.addEventListener('click', saveOrder);
+        els.btnExportExcel.addEventListener('click', exportToExcel);
+        els.searchInput.addEventListener('input', (e) => { searchQuery = e.target.value; renderProducts(); });
+
+        (async function init() {
+            els.sheetUrlInput.value = sheetUrl;
+            const success = await loadFromGoogleSheet(sheetUrl);
+            if (!success) {
+                products = fallbackProducts;
+                renderCategories();
+                renderProducts();
+                els.dataSourceText.textContent = '使用離線數據';
+            }
+            renderOrderDetails();
+        })();
+    </script>
+</body>
+</html>
+
