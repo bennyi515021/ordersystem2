@@ -1,0 +1,10 @@
+# Private sync credentials and setup artifacts
+private/
+.sync-key
+.sync-key-hash
+sync-setup*.json
+.clasp.json
+
+# Local tooling
+node_modules/
+.DS_Store
